@@ -1,0 +1,44 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Packaging / builds
+build/
+dist/
+*.egg-info/
+*.spec
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Pygame / game project local files
+*.save
+*.sav
+savegames/
+profiles/
+logs/
+*.log
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Optional: keep generated assets or compiled files out if not intended to version
+# assets/*.png
+# music/*.mp3
