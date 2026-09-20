@@ -14,7 +14,7 @@ pygame.display.set_caption("game")
 ######################建立畫布######################
 bg = pygame.Surface((width, height))  # 建立畫布
 bg.fill((120, 255, 200))  # 設定畫布顏色
-####################繪製圓形######################
+######################繪製圓形######################
 # 畫圓形,(畫布,顏色,圓心座標,半徑,線寬)
 pygame.draw.circle(bg, (0, 0, 255), (200, 100), 30, 0)
 pygame.draw.circle(bg, (0, 0, 255), (400, 100), 30, 0)
@@ -29,8 +29,12 @@ pygame.draw.ellipse(bg, (255, 0, 0), [400, 160, 60, 35], 5)
 pygame.draw.line(bg, (255, 0, 255), (240, 220), (360, 220), 3)
 ######################循環偵測######################
 while True:
+    x, y = pygame.mouse.get_pos()  # 取得滑鼠座標
     for event in pygame.event.get():  # 偵測事件
         if event.type == pygame.QUIT:  # 偵測到關閉視窗
             sys.exit()  # 結束程式
     screen.blit(bg, (0, 0))  # 畫布貼到視窗上
     pygame.display.update()  # 更新視窗
+    if event.type == pygame.MOUSEBUTTONDOWN:  # 偵測到滑鼠按下
+        print("click")
+        print("滑鼠座標:", x, y)  # 印出滑鼠座標
