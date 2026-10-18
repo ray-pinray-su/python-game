@@ -229,7 +229,7 @@ while True:
                 for brick in bricks:
                     if brick.spawn_balls:
                         brick.spawn_balls = False
-                        spawn_speeds = [-3, 0, 3]
+                        spawn_speeds = [-2.5, 0.5, 2.5]
                         spawn_colors = [
                             (255, 100, 100),
                             (100, 255, 150),
@@ -242,7 +242,7 @@ while True:
                                 Ball_radius,
                                 spawn_colors[index],
                                 spawn_speeds[index],
-                                -3.5,
+                                -3.2,
                             )
                             new_ball.is_moving = True
                             new_balls.append(new_ball)
