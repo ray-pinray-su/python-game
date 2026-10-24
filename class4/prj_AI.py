@@ -132,7 +132,7 @@ def create_bricks():
             )
             brick = Brick(x, y, brick_w, brick_h, color)
             new_bricks.append(brick)
-    special_bricks = random.sample(range(len(new_bricks)), 8)
+    special_bricks = random.sample(range(len(new_bricks)), 5)
     for special_brick in special_bricks:
         new_bricks[special_brick].is_special = True
     return new_bricks
@@ -171,8 +171,8 @@ ball = Ball(
     pad.rect.y - Ball_radius,
     Ball_radius,
     Ball_color,
-    4.5 * math.cos(math.radians(45)),
-    -4.5 * math.sin(math.radians(45)),
+    4.5 * math.cos(math.radians(50)),
+    -4.5 * math.sin(math.radians(50)),
 )
 ball.start_offset = -Ball_radius - 5
 ball2 = Ball(
@@ -303,9 +303,7 @@ while True:
 
     score_text = font.render("分數：" + str(score), True, (255, 255, 255))
     screen.blit(score_text, (10, 10))
-    high_score_text = font.render(
-        "最高分：" + str(high_score), True, (255, 255, 255)
-    )
+    high_score_text = font.render("最高分：" + str(high_score), True, (255, 255, 255))
     screen.blit(high_score_text, (bg_x - 180, 10))
 
     if game_over:
