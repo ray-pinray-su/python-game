@@ -7,7 +7,9 @@ import math
 
 ######################物件類別######################
 class Brick:
-    def __init__(self, x, y, width, height, color, is_special=False):
+    def __init__(
+        self, x, y, width, height, color, is_special=False, is_reversal=False
+    ):
         """
         初始化磚塊/Initialize the brick\n
         x,y:磚塊左上角座標/Top-left corner coordinates of the brick\n
@@ -18,7 +20,9 @@ class Brick:
         self.color = color
         self.hit = False
         self.is_special = is_special
+        self.is_reversal = is_reversal
         self.spawn_balls = False
+        self.reverse_balls = False
 
     def draw(self, display_area):
         """
@@ -29,6 +33,8 @@ class Brick:
             pygame.draw.rect(display_area, self.color, self.rect)
             if self.is_special:
                 pygame.draw.rect(display_area, (255, 215, 0), self.rect, 3)
+            elif self.is_reversal:
+                pygame.draw.rect(display_area, (0, 255, 255), self.rect, 3)
 
 
 class Ball:
@@ -105,14 +111,17 @@ class Ball:
                     score += 1
                     if brick.is_special:
                         brick.spawn_balls = True
+                    if brick.is_reversal:
+                        brick.reverse_balls = True
 
-                    if (
-                        self.x < brick.rect.x
-                        or self.x > brick.rect.x + brick.rect.width
-                    ):
-                        self.speed_x = -self.speed_x
-                    else:
-                        self.speed_y = -self.speed_y
+                    if not brick.is_reversal:
+                        if (
+                            self.x < brick.rect.x
+                            or self.x > brick.rect.x + brick.rect.width
+                        ):
+                            self.speed_x = -self.speed_x
+                        else:
+                            self.speed_y = -self.speed_y
 
         return score
 
@@ -135,6 +144,12 @@ def create_bricks():
     special_bricks = random.sample(range(len(new_bricks)), 5)
     for special_brick in special_bricks:
         new_bricks[special_brick].is_special = True
+    available_bricks = list(range(len(new_bricks)))
+    for special_brick in special_bricks:
+        available_bricks.remove(special_brick)
+    reversal_bricks = random.sample(available_bricks, 2)
+    for reversal_brick in reversal_bricks:
+        new_bricks[reversal_brick].is_reversal = True
     return new_bricks
 
 
@@ -227,6 +242,11 @@ while True:
                 current_ball.move()
                 score += current_ball.check_collision(bg_x, bg_y, pad, bricks)
                 for brick in bricks:
+                    if brick.reverse_balls:
+                        brick.reverse_balls = False
+                        for affected_ball in balls:
+                            if affected_ball.is_moving and affected_ball.speed_y > 0:
+                                affected_ball.speed_y = -abs(affected_ball.speed_y)
                     if brick.spawn_balls:
                         brick.spawn_balls = False
                         spawn_speeds = [-2.5, 0.5, 2.5]
