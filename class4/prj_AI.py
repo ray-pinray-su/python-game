@@ -3,6 +3,7 @@ import pygame  # 載入pygame套件
 import sys  # 載入sys套件
 import random  # 載入random套件
 import math
+import struct
 
 
 ######################物件類別######################
@@ -55,6 +56,7 @@ class Ball:
         self.is_moving = False
         self.is_lost = False
         self.start_offset = 0
+        self.last_event = ""
 
     def draw(self, display_area):
         """
@@ -80,15 +82,19 @@ class Ball:
         bricks:磚塊列表/List of bricks\n
         pad:底板物件/Pad object\n
         """
+        self.last_event = ""
         if self.x - self.radius <= 0 or self.x + self.radius >= bg_x:
             self.speed_x = -self.speed_x
+            self.last_event = "wall"
 
         if self.y - self.radius <= 0:
             self.speed_y = -self.speed_y
+            self.last_event = "wall"
 
         if self.y + self.radius >= bg_y:
             self.is_moving = False
             self.is_lost = True
+            self.last_event = "lost"
             return 0
 
         if (
@@ -96,6 +102,7 @@ class Ball:
             and pad.rect.x <= self.x <= pad.rect.x + pad.rect.width
         ):
             self.speed_y = -abs(self.speed_y)
+            self.last_event = "pad"
 
         score = 0
         for brick in bricks:
@@ -107,6 +114,7 @@ class Ball:
                 ):
                     brick.hit = True
                     score += 1
+                    self.last_event = "brick"
                     if brick.is_special:
                         brick.spawn_balls = True
                     if brick.is_reversal:
@@ -152,7 +160,38 @@ def create_bricks():
 
 
 ######################初始化設定######################
+pygame.mixer.pre_init(44100, -16, 1, 512)
 pygame.init()  # 啟動pygame
+
+
+def create_tone(frequency, duration, volume=0.35, fade_end=True):
+    """產生短音效，不需要額外的音效檔案。"""
+    sample_rate = 44100
+    sample_count = int(sample_rate * duration)
+    samples = bytearray()
+    for index in range(sample_count):
+        envelope = 1.0 - (index / sample_count if fade_end else 0)
+        sample = int(32767 * volume * envelope * math.sin(2 * math.pi * frequency * index / sample_rate))
+        samples.extend(struct.pack("<h", sample))
+    return pygame.mixer.Sound(buffer=bytes(samples))
+
+
+sounds = {
+    "brick": create_tone(180, 0.07, 0.24),
+    "wall": create_tone(110, 0.035, 0.12),
+    "pad": create_tone(260, 0.06, 0.18),
+    "special": create_tone(520, 0.16, 0.38),
+    "reversal": create_tone(330, 0.12, 0.28),
+    "lost": create_tone(75, 0.25, 0.30),
+    "win": create_tone(660, 0.35, 0.38),
+}
+
+
+def play_sound(name):
+    if pygame.mixer.get_init() is not None:
+        sounds[name].play()
+
+
 FPS = pygame.time.Clock()  # 設定遊戲更新速度
 ######################載入圖片######################
 
@@ -211,12 +250,25 @@ score = 0
 high_score = 0
 game_over = False
 game_result = ""
+shake_frames = 0
+shake_strength = 0
+shake_x = 0
+shake_y = 0
 ######################遊戲結束設定######################
 
 ######################主程式######################
 while True:
     FPS.tick(60)  # 設定遊戲更新速度為60FPS
-    screen.fill((0, 0, 0))  # 設定背景顏色
+    world_surface = pygame.Surface(bg_size)
+    world_surface.fill((0, 0, 0))
+
+    if shake_frames > 0:
+        shake_x = random.randint(-shake_strength, shake_strength)
+        shake_y = random.randint(-shake_strength, shake_strength)
+        shake_frames -= 1
+    else:
+        shake_x = 0
+        shake_y = 0
     mos_x, mos_y = pygame.mouse.get_pos()  # 取得滑鼠座標
     pad.rect.x = mos_x - pad.rect.width // 2  # 底板中心跟隨滑鼠移動
 
@@ -238,15 +290,26 @@ while True:
                 current_ball.y = pad.rect.y - current_ball.radius
             else:
                 current_ball.move()
-                score += current_ball.check_collision(bg_x, bg_y, pad, bricks)
+                collision_score = current_ball.check_collision(bg_x, bg_y, pad, bricks)
+                score += collision_score
+                if collision_score > 0:
+                    play_sound("brick")
+                elif current_ball.last_event in ("wall", "pad", "lost"):
+                    play_sound(current_ball.last_event)
                 for brick in bricks:
                     if brick.reverse_balls:
                         brick.reverse_balls = False
+                        play_sound("reversal")
+                        shake_frames = 7
+                        shake_strength = 3
                         for affected_ball in balls:
                             if affected_ball.is_moving and affected_ball.speed_y > 0:
                                 affected_ball.speed_y = -abs(affected_ball.speed_y)
                     if brick.spawn_balls:
                         brick.spawn_balls = False
+                        play_sound("special")
+                        shake_frames = 14
+                        shake_strength = 6
                         spawn_speeds = [-2.5, 0.5, 2.5]
                         spawn_colors = [
                             (255, 100, 100),
@@ -280,6 +343,7 @@ while True:
         if remaining_bricks == 0:
             game_over = True
             game_result = "你贏了！"
+            play_sound("win")
         elif remaining_balls == 0:
             game_over = True
             game_result = "遊戲結束！"
@@ -297,6 +361,8 @@ while True:
                 score = 0
                 game_over = False
                 game_result = ""
+                shake_frames = 0
+                shake_strength = 0
                 for current_ball in balls:
                     current_ball.is_moving = False
                     current_ball.is_lost = False
@@ -312,27 +378,29 @@ while True:
                         current_ball.is_moving = True  # 開始移動球
 
     for brick in bricks:
-        brick.draw(screen)
+        brick.draw(world_surface)
 
-    pad.draw(screen)  # 繪製底板
+    pad.draw(world_surface)  # 繪製底板
     for current_ball in balls:
         if not current_ball.is_lost:
-            current_ball.draw(screen)  # 繪製球
+            current_ball.draw(world_surface)  # 繪製球
 
     score_text = font.render("分數：" + str(score), True, (255, 255, 255))
-    screen.blit(score_text, (10, 10))
+    world_surface.blit(score_text, (10, 10))
     high_score_text = font.render("最高分：" + str(high_score), True, (255, 255, 255))
-    screen.blit(high_score_text, (bg_x - 180, 10))
+    world_surface.blit(high_score_text, (bg_x - 180, 10))
 
     if game_over:
         result_text = large_font.render(game_result, True, (255, 255, 255))
         result_rect = result_text.get_rect(center=(bg_x // 2, bg_y // 2 - 35))
-        screen.blit(result_text, result_rect)
+        world_surface.blit(result_text, result_rect)
         final_score_text = font.render("最後分數：" + str(score), True, (255, 255, 255))
         final_score_rect = final_score_text.get_rect(center=(bg_x // 2, bg_y // 2 + 15))
-        screen.blit(final_score_text, final_score_rect)
+        world_surface.blit(final_score_text, final_score_rect)
         restart_text = font.render("點擊滑鼠重新開始", True, (255, 255, 255))
         restart_rect = restart_text.get_rect(center=(bg_x // 2, bg_y // 2 + 60))
-        screen.blit(restart_text, restart_rect)
+        world_surface.blit(restart_text, restart_rect)
 
+    screen.fill((0, 0, 0))
+    screen.blit(world_surface, (shake_x, shake_y))
     pygame.display.update()  # 更新視窗
