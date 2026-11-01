@@ -7,9 +7,7 @@ import math
 
 ######################物件類別######################
 class Brick:
-    def __init__(
-        self, x, y, width, height, color, is_special=False, is_reversal=False
-    ):
+    def __init__(self, x, y, width, height, color, is_special=False, is_reversal=False):
         """
         初始化磚塊/Initialize the brick\n
         x,y:磚塊左上角座標/Top-left corner coordinates of the brick\n
