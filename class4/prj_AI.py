@@ -131,13 +131,71 @@ class Ball:
 
         return score
 
+    def check_ball_collision(self, other_ball):
+        """處理兩顆球的圓形碰撞。"""
+        if not self.is_moving or not other_ball.is_moving:
+            return
+
+        dx = other_ball.x - self.x
+        dy = other_ball.y - self.y
+        distance_sq = dx * dx + dy * dy
+        minimum_distance = self.radius + other_ball.radius
+
+        if distance_sq >= minimum_distance * minimum_distance:
+            return
+        if distance_sq == 0:
+            dx = 1.0
+            dy = 0
+            distance_sq = 1.0
+
+        distance = math.sqrt(distance_sq)
+        nx = dx / distance
+        ny = dy / distance
+
+        overlap = minimum_distance - distance
+        self.x -= nx * overlap * 0.5
+        self.y -= ny * overlap * 0.5
+        other_ball.x += nx * overlap * 0.5
+        other_ball.y += ny * overlap * 0.5
+
+        relative_x = other_ball.speed_x - self.speed_x
+        relative_y = other_ball.speed_y - self.speed_y
+        velocity_along_normal = relative_x * nx + relative_y * ny
+        if velocity_along_normal >= 0:
+            return
+
+        impulse = -velocity_along_normal
+        self.speed_x -= impulse * nx
+        self.speed_y -= impulse * ny
+        other_ball.speed_x += impulse * nx
+        other_ball.speed_y += impulse * ny
+
 
 ######################定義函式區######################
-def create_bricks():
+def should_create_brick(level, col, row):
+    """依關卡配置決定要建立哪個磚塊位置。"""
+    if level == 1:
+        return True
+    if level == 2:
+        return abs(col - 5) + abs(row - 4) <= 6
+    if level == 3:
+        return (
+            row == 0
+            or row == 8
+            or col == 0
+            or col == 10
+            or (row + col) % 4 == 1
+        )
+    return True
+
+
+def create_bricks(level=1):
     """建立磚塊清單，開始新遊戲時可以重新呼叫。"""
     new_bricks = []
     for col in range(bricks_col):
         for row in range(bricks_row):
+            if not should_create_brick(level, col, row):
+                continue
             x = col * (brick_w + brick_gap) + 70  # 從70開始排
             y = row * (brick_h + brick_gap) + 60  # 從60開始排
             color = (
@@ -147,13 +205,13 @@ def create_bricks():
             )
             brick = Brick(x, y, brick_w, brick_h, color)
             new_bricks.append(brick)
-    special_bricks = random.sample(range(len(new_bricks)), 5)
+    special_bricks = random.sample(range(len(new_bricks)), 3)
     for special_brick in special_bricks:
         new_bricks[special_brick].is_special = True
     available_bricks = list(range(len(new_bricks)))
     for special_brick in special_bricks:
         available_bricks.remove(special_brick)
-    reversal_bricks = random.sample(available_bricks, 2)
+    reversal_bricks = random.sample(available_bricks, 4)
     for reversal_brick in reversal_bricks:
         new_bricks[reversal_brick].is_reversal = True
     return new_bricks
@@ -171,7 +229,12 @@ def create_tone(frequency, duration, volume=0.35, fade_end=True):
     samples = bytearray()
     for index in range(sample_count):
         envelope = 1.0 - (index / sample_count if fade_end else 0)
-        sample = int(32767 * volume * envelope * math.sin(2 * math.pi * frequency * index / sample_rate))
+        sample = int(
+            32767
+            * volume
+            * envelope
+            * math.sin(2 * math.pi * frequency * index / sample_rate)
+        )
         samples.extend(struct.pack("<h", sample))
     return pygame.mixer.Sound(buffer=bytes(samples))
 
@@ -209,7 +272,9 @@ bricks_col = 11
 brick_w = 58
 brick_h = 16
 brick_gap = 2
-bricks = create_bricks()
+TOTAL_LEVELS = 3
+current_level = 1
+bricks = create_bricks(current_level)
 
 ######################顯示文字設定######################
 
@@ -250,6 +315,8 @@ score = 0
 high_score = 0
 game_over = False
 game_result = ""
+level_transition_frames = 0
+pending_level = 0
 shake_frames = 0
 shake_strength = 0
 shake_x = 0
@@ -280,55 +347,76 @@ while True:
 
     if not game_over:
         new_balls = []
-        for current_ball in balls:
-            if current_ball.is_lost:
-                continue
-            if not current_ball.is_moving:
-                current_ball.x = (
-                    pad.rect.x + pad.rect.width // 2 + current_ball.start_offset
-                )
-                current_ball.y = pad.rect.y - current_ball.radius
-            else:
-                current_ball.move()
-                collision_score = current_ball.check_collision(bg_x, bg_y, pad, bricks)
-                score += collision_score
-                if collision_score > 0:
-                    play_sound("brick")
-                elif current_ball.last_event in ("wall", "pad", "lost"):
-                    play_sound(current_ball.last_event)
-                for brick in bricks:
-                    if brick.reverse_balls:
-                        brick.reverse_balls = False
-                        play_sound("reversal")
-                        shake_frames = 7
-                        shake_strength = 3
-                        for affected_ball in balls:
-                            if affected_ball.is_moving and affected_ball.speed_y > 0:
-                                affected_ball.speed_y = -abs(affected_ball.speed_y)
-                    if brick.spawn_balls:
-                        brick.spawn_balls = False
-                        play_sound("special")
-                        shake_frames = 14
-                        shake_strength = 6
-                        spawn_speeds = [-2.5, 0.5, 2.5]
-                        spawn_colors = [
-                            (255, 100, 100),
-                            (100, 255, 150),
-                            (255, 255, 100),
-                        ]
-                        for index in range(3):
-                            new_ball = Ball(
-                                brick.rect.centerx,
-                                brick.rect.centery,
-                                Ball_radius,
-                                spawn_colors[index],
-                                spawn_speeds[index],
-                                -3.2,
-                            )
-                            new_ball.is_moving = True
-                            new_balls.append(new_ball)
+        if level_transition_frames > 0:
+            level_transition_frames -= 1
+            if level_transition_frames == 0:
+                current_level = pending_level
+                pending_level = 0
+                bricks = create_bricks(current_level)
+                balls = [ball, ball2, ball3]
+                for current_ball in balls:
+                    current_ball.is_moving = False
+                    current_ball.is_lost = False
+                    current_ball.speed_x = current_ball.initial_speed_x
+                    current_ball.speed_y = current_ball.initial_speed_y
+                    current_ball.x = (
+                        pad.rect.x + pad.rect.width // 2 + current_ball.start_offset
+                    )
+                    current_ball.y = pad.rect.y - current_ball.radius
+        else:
+            for current_ball in balls:
+                if current_ball.is_lost:
+                    continue
+                if not current_ball.is_moving:
+                    current_ball.x = (
+                        pad.rect.x + pad.rect.width // 2 + current_ball.start_offset
+                    )
+                    current_ball.y = pad.rect.y - current_ball.radius
+                else:
+                    current_ball.move()
+                    collision_score = current_ball.check_collision(bg_x, bg_y, pad, bricks)
+                    score += collision_score
+                    if collision_score > 0:
+                        play_sound("brick")
+                    elif current_ball.last_event in ("wall", "pad", "lost"):
+                        play_sound(current_ball.last_event)
+                    for brick in bricks:
+                        if brick.reverse_balls:
+                            brick.reverse_balls = False
+                            play_sound("reversal")
+                            shake_frames = 7
+                            shake_strength = 3
+                            for affected_ball in balls:
+                                if affected_ball.is_moving and affected_ball.speed_y > 0:
+                                    affected_ball.speed_y = -abs(affected_ball.speed_y)
+                        if brick.spawn_balls:
+                            brick.spawn_balls = False
+                            play_sound("special")
+                            shake_frames = 14
+                            shake_strength = 6
+                            spawn_speeds = [-2.5, 0.5, 2.5]
+                            spawn_colors = [
+                                (255, 100, 100),
+                                (100, 255, 150),
+                                (255, 255, 100),
+                            ]
+                            for index in range(3):
+                                new_ball = Ball(
+                                    brick.rect.centerx,
+                                    brick.rect.centery,
+                                    Ball_radius,
+                                    spawn_colors[index],
+                                    spawn_speeds[index],
+                                    -3.2,
+                                )
+                                new_ball.is_moving = True
+                                new_balls.append(new_ball)
 
-        balls.extend(new_balls)
+            balls.extend(new_balls)
+
+            for first_index in range(len(balls)):
+                for second_index in range(first_index + 1, len(balls)):
+                    balls[first_index].check_ball_collision(balls[second_index])
 
         remaining_bricks = 0
         for brick in bricks:
@@ -340,10 +428,14 @@ while True:
             if not current_ball.is_lost:
                 remaining_balls += 1
 
-        if remaining_bricks == 0:
-            game_over = True
-            game_result = "你贏了！"
-            play_sound("win")
+        if remaining_bricks == 0 and level_transition_frames == 0:
+            if current_level < TOTAL_LEVELS:
+                pending_level = current_level + 1
+                level_transition_frames = 120
+            else:
+                game_over = True
+                game_result = "你贏了！"
+                play_sound("win")
         elif remaining_balls == 0:
             game_over = True
             game_result = "遊戲結束！"
@@ -356,7 +448,10 @@ while True:
             sys.exit()  # 結束程式
         if event.type == pygame.MOUSEBUTTONDOWN:  # 偵測到滑鼠按下
             if game_over:
-                bricks = create_bricks()
+                current_level = 1
+                level_transition_frames = 0
+                pending_level = 0
+                bricks = create_bricks(current_level)
                 balls = [ball, ball2, ball3]
                 score = 0
                 game_over = False
@@ -373,9 +468,10 @@ while True:
                     )
                     current_ball.y = pad.rect.y - current_ball.radius
             else:
-                for current_ball in balls:
-                    if not current_ball.is_lost:
-                        current_ball.is_moving = True  # 開始移動球
+                if level_transition_frames == 0:
+                    for current_ball in balls:
+                        if not current_ball.is_lost:
+                            current_ball.is_moving = True  # 開始移動球
 
     for brick in bricks:
         brick.draw(world_surface)
@@ -389,6 +485,24 @@ while True:
     world_surface.blit(score_text, (10, 10))
     high_score_text = font.render("最高分：" + str(high_score), True, (255, 255, 255))
     world_surface.blit(high_score_text, (bg_x - 180, 10))
+    level_text = font.render(
+        "關卡：" + str(current_level) + "/" + str(TOTAL_LEVELS),
+        True,
+        (255, 255, 255),
+    )
+    level_rect = level_text.get_rect(center=(bg_x // 2, 24))
+    world_surface.blit(level_text, level_rect)
+
+    if level_transition_frames > 0:
+        transition_text = large_font.render(
+            "進入關卡 " + str(pending_level),
+            True,
+            (255, 255, 255),
+        )
+        transition_rect = transition_text.get_rect(
+            center=(bg_x // 2, bg_y // 2)
+        )
+        world_surface.blit(transition_text, transition_rect)
 
     if game_over:
         result_text = large_font.render(game_result, True, (255, 255, 255))
